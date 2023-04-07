@@ -3,8 +3,8 @@ import random
 import torch
 import torch.nn as nn
 
-from yolov7_pose_estimation.models.common import Conv, DWConv
-from yolov7_pose_estimation.utils.google_utils import attempt_download
+from models.common import Conv, DWConv
+from utils.google_utils import attempt_download
 
 
 class CrossConv(nn.Module):

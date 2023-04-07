@@ -10,6 +10,16 @@ from utils.torch_utils import select_device
 from models.experimental import attempt_load
 from utils.general import non_max_suppression_kpt,strip_optimizer,xyxy2xywh
 from utils.plots import output_to_keypoint, plot_skeleton_kpts,colors,plot_one_box_kpt
+from conditions import *
+from Track.Tracker import Detection, Tracker
+
+def kpt2bbox(kpt, ex=0):
+    """Get bbox that hold on all of the keypoints (x,y)
+    kpt: array of shape `(N, 2)`,
+    ex: (int) expand bounding box,
+    """
+    return np.array((kpt[:, 0].min() - ex, kpt[:, 1].min() - ex,
+                     kpt[:, 0].max() + ex, kpt[:, 1].max() + ex))
 
 @torch.no_grad()
 def run(poseweights="yolov7-w6-pose.pt",source="football1.mp4",device='cpu',view_img=False,
@@ -23,8 +33,14 @@ def run(poseweights="yolov7-w6-pose.pt",source="football1.mp4",device='cpu',view
     device = select_device(opt.device) #select device
     half = device.type != 'cpu'
 
+    # Detection model
     model = attempt_load(poseweights, map_location=device)  #Load model
     _ = model.eval()
+
+    # Tracker
+    max_age = 30
+    tracker = Tracker(max_age=max_age, n_init=3)
+
     names = model.module.names if hasattr(model, 'module') else model.names  # get class names
    
     if source.isnumeric() :    
@@ -75,7 +91,18 @@ def run(poseweights="yolov7-w6-pose.pt",source="football1.mp4",device='cpu',view
                                             nc=model.yaml['nc'], # Number of classes.
                                             nkpt=model.yaml['nkpt'], # Number of keypoints.
                                             kpt_label=True)
-            
+
+                # Predict each tracks bbox of current frame from previous frames information with Kalman filter.
+                tracker.predict()
+
+                # Merge two source of predicted bbox together.
+                for track in tracker.tracks:
+                    det = torch.tensor([track.to_tlbr().tolist() + [1.0, 0.0] + list(0 for i in range(51))], dtype=torch.float32)
+                    output_data[0] = torch.cat([output_data[0], det], dim=0) if output_data[0] is not None else det
+                
+                detections = []  # List of Detections object for tracking.
+
+
                 output = output_to_keypoint(output_data)
 
                 im0 = image[0].permute(1, 2, 0) * 255 # Change format [b, c, h, w] to [h, w, c] for displaying the image.
@@ -90,16 +117,48 @@ def run(poseweights="yolov7-w6-pose.pt",source="football1.mp4",device='cpu',view
                         for c in pose[:, 5].unique(): # Print results
                             n = (pose[:, 5] == c).sum()  # detections per class
                             print("No of Objects in Current Frame : {}".format(n))
-                        
+
                         for det_index, (*xyxy, conf, cls) in enumerate(reversed(pose[:,:6])): #loop over poses for drawing on frame
                             c = int(cls)  # integer class
                             kpts = pose[det_index, 6:]
-                            label = None if opt.hide_labels else (names[c] if opt.hide_conf else f'{names[c]} {conf:.2f}')
-                            plot_one_box_kpt(xyxy, im0, label=label, color=colors(c, True), 
-                                        line_thickness=opt.line_thickness,kpt_label=True, kpts=kpts, steps=3, 
-                                        orig_shape=im0.shape[:2])
+                            reshaped_kpts = torch.reshape(pose[det_index, 6:], (17, 3))
 
-                
+                            detections.append(Detection(kpt2bbox(reshaped_kpts.numpy()),
+                                    reshaped_kpts.numpy(),
+                                    reshaped_kpts[:,2].mean().numpy()))
+
+
+                            # label = None if opt.hide_labels else (names[c] if opt.hide_conf else f'{names[c]} {conf:.2f}')
+                            # plot_one_box_kpt(xyxy, im0, label=label, color=colors(c, True), 
+                            #             line_thickness=opt.line_thickness,kpt_label=True, kpts=kpts, steps=3, 
+                            #             orig_shape=im0.shape[:2])
+                # Update tracks by matching each track information of current and previous frame or
+                # create a new track if no matched.
+                tracker.update(detections)
+
+                #Predict Normal or Fall of each track
+                for i, track in enumerate(tracker.tracks):
+                    if not track.is_confirmed():
+                        continue
+
+                    track_id = track.track_id
+                    bbox = track.to_tlbr().astype(int)
+                    clr = (0, 255, 0)
+                    action = "Normal"
+
+                    # Use 5 frames time-steps to prediction
+                    if len(track.keypoints_list) % 5 == 0:
+                        pts = np.array(track.keypoints_list, dtype=np.float32)
+                        print(pts.shape)
+                        if Condition_one(pts, 5) and action == "Normal":
+                            if Condition_two(pts):
+                                if Condition_three(bbox):
+                                    action = "Fall"
+
+                    plot_one_box_kpt(bbox, im0, label=action, color=colors(c, True), 
+                                        line_thickness= 3,kpt_label=True, kpts=kpts, steps=3, 
+                                        orig_shape=im0.shape[:2])
+                    
                 end_time = time.time()  #Calculatio for FPS
                 fps = 1 / (end_time - start_time)
                 total_fps += fps
@@ -130,7 +189,7 @@ def run(poseweights="yolov7-w6-pose.pt",source="football1.mp4",device='cpu',view
 def parse_opt():
     parser = argparse.ArgumentParser()
     parser.add_argument('--poseweights', nargs='+', type=str, default='yolov7-w6-pose.pt', help='model path(s)')
-    parser.add_argument('--source', type=str, default='football1.mp4', help='video/0 for webcam') #video source
+    parser.add_argument('--source', type=str, default=r"C:\Users\taidam\Downloads\testset\6_ S_ DN_8.mp4", help='video/0 for webcam') #video source
     parser.add_argument('--device', type=str, default='cpu', help='cpu/0,1,2,3(gpu)')   #device arugments
     parser.add_argument('--view-img', action='store_true', help='display results')  #display results
     parser.add_argument('--save-conf', action='store_true', help='save confidences in --save-txt labels') #save confidence in txt writing
