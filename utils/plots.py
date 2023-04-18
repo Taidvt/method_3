@@ -98,7 +98,7 @@ def plot_one_box(x, img, color=None, label="Normal", line_thickness=1):
     tf = max(tl - 1, 1)  # font thickness
     t_size = cv2.getTextSize(label, 0, fontScale=tl / 3, thickness=tf)[0]
     c2 = c1[0] + t_size[0], c1[1] - t_size[1] - 3
-    cv2.putText(img, label, (c1[0], c1[1] - 2), 0, tl , color, thickness=tf//2, lineType=cv2.LINE_AA)
+    cv2.putText(img, label, (c1[0], c1[1] - 2), 0, tl / 6, color, thickness=tf//2, lineType=cv2.LINE_AA)
 
 
 def plot_one_box_PIL(box, img, color=None, label=None, line_thickness=None):

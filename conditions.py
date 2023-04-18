@@ -3,6 +3,7 @@ import numpy as np
 def Condition_one(pts, length, threshold=0.09):
     hip_joint = np.mean(pts[:, 11:12, 1], axis=1)
     velocity = np.abs(np.diff(hip_joint)[-1] / length)
+    # print("velocity: ", velocity)
     return velocity >= threshold
 
 def Condition_two(pts, threshold = 45):
@@ -11,6 +12,7 @@ def Condition_two(pts, threshold = 45):
     y = pts[-1,0,1] - s_bar[1]
     x = abs(pts[-1,0,0] - s_bar[0])
     theta =  np.rad2deg(np.arctan(y/x))
+    # print("theta: ", theta)
     return theta < threshold 
 
 def Condition_three(bbox):
@@ -18,4 +20,5 @@ def Condition_three(bbox):
     width = abs(x2 - x1)
     height = abs(y2 - y1)
     p = width / height
+    # print("p: ", p)
     return p >= 0.5

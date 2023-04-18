@@ -12,6 +12,7 @@ from utils.general import non_max_suppression_kpt,strip_optimizer,xyxy2xywh
 from utils.plots import plot_one_box, output_to_keypoint, plot_skeleton_kpts,colors,plot_one_box_kpt
 from conditions import *
 from Track.Tracker import Detection, Tracker
+import pdb
 
 def kpt2bbox(kpt, ex=0):
     """Get bbox that hold on all of the keypoints (x,y)
@@ -24,7 +25,7 @@ def kpt2bbox(kpt, ex=0):
 @torch.no_grad()
 def run(poseweights="yolov7-w6-pose.pt",source="football1.mp4",device='cpu',view_img=False,
         save_conf=False,line_thickness = 3,hide_labels=False, hide_conf=True):
-
+    
     frame_count = 0  #count no of frames
     total_fps = 0  #count total fps
     time_list = []   #list to store time
@@ -69,7 +70,7 @@ def run(poseweights="yolov7-w6-pose.pt",source="football1.mp4",device='cpu',view
             print("Frame {} Processing".format(frame_count+1))
 
             ret, frame = cap.read()  #get frame and success from video capture
-            
+      
             if ret: #if success is true, means frame exist
                 orig_image = frame #store frame
                 image = cv2.cvtColor(orig_image, cv2.COLOR_BGR2RGB) #convert frame to RGB
@@ -91,14 +92,19 @@ def run(poseweights="yolov7-w6-pose.pt",source="football1.mp4",device='cpu',view
                                             nc=model.yaml['nc'], # Number of classes.
                                             nkpt=model.yaml['nkpt'], # Number of keypoints.
                                             kpt_label=True)
-
+                # print(output_data[0].size())
                 # Predict each tracks bbox of current frame from previous frames information with Kalman filter.
                 tracker.predict()
 
-                # Merge two source of predicted bbox together.
-                for track in tracker.tracks:
-                    det = torch.tensor([track.to_tlbr().tolist() + [1.0, 0.0] + list(0 for i in range(51))], dtype=torch.float32).to(device)
-                    output_data[0] = torch.cat([output_data[0], det], dim=0) if output_data[0] is not None else det
+                # detected = output_data[0,:6]
+                # print("shape of detected: ", detected.shape)
+                # # Merge two source of predicted bbox together.
+                # for track in tracker.tracks:
+                #     # pdb.set_trace()
+
+                #     det = torch.tensor([track.to_tlbr().tolist() + [1.0, 0.0] + list(0 for i in range(51))], dtype=torch.float32).to(device)
+                #     # print(det.size(), output_data[0].size())
+                #     detected = torch.cat([detected, det], dim=0) if detected.size() != torch.Size([0, 6]) else det
                 
                 detections = []  # List of Detections object for tracking.
 
@@ -123,7 +129,7 @@ def run(poseweights="yolov7-w6-pose.pt",source="football1.mp4",device='cpu',view
                             kpts = pose[det_index, 6:]
                             reshaped_kpts = torch.reshape(pose[det_index, 6:], (17, 3))
 
-                            detections.append(Detection(kpt2bbox(reshaped_kpts[:,:2].cpu().numpy()),
+                            detections.append(Detection(xyxy,
                                     reshaped_kpts.cpu().numpy(),
                                     reshaped_kpts[:,2].mean().cpu().numpy()))
 
@@ -149,16 +155,17 @@ def run(poseweights="yolov7-w6-pose.pt",source="football1.mp4",device='cpu',view
                     # Use 5 frames time-steps to prediction
                     if len(track.keypoints_list) % 5 == 0:
                         pts = np.array(track.keypoints_list, dtype=np.float32)
-                        print(pts.shape)
+                        # print(pts.shape)
                         if Condition_one(pts, 5): # and action == "Normal"
                             if Condition_two(pts):
                                 if Condition_three(bbox):
                                     action = "Fall"
+                                    print("-"*10, action, "-"*10)
 
                     # plot_one_box_kpt(bbox, im0, label=action, color=colors(c, True), 
                     #                     line_thickness= 3,kpt_label=True, kpts=kpts, steps=3, 
                     #                     orig_shape=im0.shape[:2])
-                    plot_one_box(xyxy, im0, label="Normal", line_thickness=opt.line_thickness)
+                    plot_one_box(xyxy, im0, label=action, line_thickness=opt.line_thickness)
                 
                 end_time = time.time()  #Calculatio for FPS
                 fps = 1 / (end_time - start_time)
